@@ -71,7 +71,6 @@ GAME() {
     fi
   done
 
-  echo -e "\nThanks for playing :)\n"
 }
 
 DISPLAY
