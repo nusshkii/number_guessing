@@ -1,85 +1,77 @@
-#!/bin/bash
+#! /bin/bash
 
-# Constants
 PSQL="psql --username=freecodecamp --dbname=number_guess -t --no-align -c"
-SECRET_NUMBER=$((RANDOM % 1000 + 1))
 
-# Function to check if username exists
-check_username() {
-    local username="$1"
-    local query="SELECT COUNT(*) FROM users WHERE username = '$username';"
-    local result=$($PSQL "$query")
-    echo "$result"
+DISPLAY() {
+  echo -e "\n~~~~~ Number Guessing Game ~~~~~\n" 
+
+  #get username
+  echo "Enter your username:"
+  read USERNAME
+
+  #get username from db
+  USER_ID=$($PSQL "select u_id from users where name = '$USERNAME'")
+
+  #if user present
+  if [[ $USER_ID ]]; then
+    #get games played
+    GAMES_PLAYED=$($PSQL "select count(u_id) from games where u_id = '$USER_ID'")
+
+    #get best game (guess)
+    BEST_GUESS=$($PSQL "select min(guesses) from games where u_id = '$USER_ID'")
+
+    echo -e "\nWelcome back, $USERNAME! You have played $GAMES_PLAYED games, and your best game took $BEST_GUESS guesses."
+  else
+    #if u_name not present in db
+    echo -e "\nWelcome, $USERNAME! It looks like this is your first time here."
+
+    #insert to users table
+    INSERTED_TO_USERS=$($PSQL "insert into users(name) values('$USERNAME')")
+    #get user_id
+    USER_ID=$($PSQL "select u_id from users where name = '$USERNAME'")
+    # echo $USER_ID
+  fi
+
+  GAME
 }
 
-# Function to fetch user info
-fetch_user_info() {
-    local username="$1"
-    local query="SELECT games_played, best_game FROM users WHERE username = '$username';"
-    local result=$($PSQL "$query")
-    echo "$result"
-}
+GAME() {
+  #secret number
+  SECRET=$((1 + $RANDOM % 1000))
 
-# Function to update user info
-update_user_info() {
-    local username="$1"
-    local games_played="$2"
-    local best_game="$3"
-    local query="INSERT INTO users (username, games_played, best_game) VALUES ('$username', $games_played, $best_game)
-                 ON CONFLICT (username) DO UPDATE SET games_played = EXCLUDED.games_played, best_game = EXCLUDED.best_game;"
-    $PSQL "$query"
-}
+  #count guesses
+  TRIES=0
 
-# Function to handle game logic
-play_game() {
-    local username="$1"
-    local games_played=0
-    local best_game=0
+  #guess number
+  # echo $SECRET
+  GUESSED=0
+  echo -e "\nGuess the secret number between 1 and 1000:"
 
-    # Check if user exists
-    local existing_user=$(check_username "$username")
-    if [[ $existing_user -eq 1 ]]; then
-        # Fetch existing user info
-        local user_info=$(fetch_user_info "$username")
-        IFS='|' read -r games_played best_game <<< "$user_info"
-        echo "Welcome back, $username! You have played $games_played games, and your best game took $best_game guesses."
+  while [[ $GUESSED = 0 ]]; do
+    read GUESS
+
+    #if not a number
+    if [[ ! $GUESS =~ ^[0-9]+$ ]]; then
+      echo -e "\nThat is not an integer, guess again:"
+    #if correct guess
+    elif [[ $SECRET = $GUESS ]]; then
+      TRIES=$(($TRIES + 1))
+      echo -e "\nYou guessed it in $TRIES tries. The secret number was $SECRET. Nice job!"
+      #insert into db
+      INSERTED_TO_GAMES=$($PSQL "insert into games(u_id, guesses) values($USER_ID, $TRIES)")
+      GUESSED=1
+    #if greater
+    elif [[ $SECRET -gt $GUESS ]]; then
+      TRIES=$(($TRIES + 1))
+      echo -e "\nIt's higher than that, guess again:"
+    #if smaller
     else
-        echo "Welcome, $username! It looks like this is your first time here."
+      TRIES=$(($TRIES + 1))
+      echo -e "\nIt's lower than that, guess again:"
     fi
+  done
 
-    # Game loop
-    local guess
-    local number_of_guesses=0
-    while true; do
-        read -p "Guess the secret number between 1 and 1000: " guess
-
-        # Validate input
-        if ! [[ "$guess" =~ ^[0-9]+$ ]]; then
-            echo "That is not an integer, guess again:"
-            continue
-        fi
-
-        ((number_of_guesses++))
-
-        if [[ $guess -eq $SECRET_NUMBER ]]; then
-            echo "You guessed it in $number_of_guesses tries. The secret number was $SECRET_NUMBER. Nice job!"
-            break
-        elif [[ $guess -lt $SECRET_NUMBER ]]; then
-            echo "It's higher than that, guess again:"
-        else
-            echo "It's lower than that, guess again:"
-        fi
-    done
-
-    # Update user info
-    update_user_info "$username" "$((games_played + 1))" "$number_of_guesses"
+  echo -e "\nThanks for playing :)\n"
 }
 
-# Main script logic
-echo "Enter your username:"
-read username
-
-# Limit username length to 22 characters
-username="${username:0:22}"
-
-play_game "$username"
+DISPLAY
